@@ -1,0 +1,43 @@
+syntax="proto3";
+
+package controlpanel;
+
+service Controller {
+	rpc GetApplicationErrors(AuthCode) returns (AppErrors);
+	rpc SetConfig(SetConfigParams) returns (Empty);
+	rpc GetConfig(AuthCode) returns (SerializedData);
+	rpc GetDatabase(AuthCode) returns (stream SerializedData);
+	rpc AddToDatabase(MessageList) returns (Empty);
+	rpc TriggerSendout(AuthCode) returns (Empty);
+}
+
+message AuthCode {
+	string Code = 1;
+}
+
+message AppErrors {
+	repeated ApplicationError Error = 1;
+}
+
+message ApplicationError {
+	string Error = 1;
+	int64 Unix = 2;
+}
+
+message SerializedData {
+	bytes Content = 1;
+}
+
+message SetConfigParams {
+	AuthCode Auth = 1;
+	SerializedData Data = 2;
+}
+
+message MessageList {
+	AuthCode Auth = 1;
+	repeated string Message = 2;
+}
+
+message Empty {
+
+}

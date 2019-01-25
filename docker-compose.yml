@@ -1,0 +1,12 @@
+version: '2'
+volumes:
+  settings: {}
+services:
+  gotuskgo:
+    restart: on-failure
+    build: .
+    ports:
+      - "5025:5025"
+    volumes: 
+      - settings:/go/src/github.com/wallnutkraken/gotuskgo/opdata
+    
