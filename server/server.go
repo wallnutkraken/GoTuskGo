@@ -125,7 +125,7 @@ func (s *Server) Start() {
 			s.setNextMessageTime()
 		}
 
-		time.Sleep(time.Second * 5)
+		time.Sleep(time.Millisecond * 500)
 	}
 }
 
