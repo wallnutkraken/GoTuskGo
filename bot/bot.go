@@ -235,6 +235,8 @@ func (b *Bot) onDiscordMessage(discord *discordgo.Session, message *discordgo.Me
 		if err := cmd(message, b); err != nil {
 			b.logf("Discord Error handling command [%s]: %s", message.Content, err.Error())
 		}
+		// Return upon finishing handling commands, do not let a command message be saved
+		return
 	}
 	// Just a regular message, add it to the bot
 	if err := b.db.AddMessage(message.Content); err != nil {
