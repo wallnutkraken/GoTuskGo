@@ -1,6 +1,7 @@
 module github.com/wallnutkraken/gotuskgo
 
 require (
+	github.com/bwmarrin/discordgo v0.19.0
 	github.com/go-telegram-bot-api/telegram-bot-api v4.6.4+incompatible
 	github.com/golang/protobuf v1.2.0
 	github.com/jinzhu/gorm v1.9.2

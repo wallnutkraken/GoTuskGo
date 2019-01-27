@@ -35,7 +35,7 @@ func main() {
 
 	// Create an instance of the server
 	serv, err := server.New(cfg, wrapper)
-	if err != nil && err != bot.ErrTelegramInit {
+	if err != nil && err != bot.ErrServiceInit {
 		panic("Error starting server: " + err.Error())
 	}
 	// And have it run on a separate goroutine

@@ -19,21 +19,25 @@ type Server struct {
 	tusk          *bot.Bot
 	config        settings.Application
 	logs          []serial.LogLine
+	logLock       *sync.Mutex
 	nextMessageAt int64
-	lock          *sync.Mutex
+	settingsLock  *sync.Mutex
+	tuskLogs      chan serial.LogLine
 }
 
 // AllLogs returns every log stored in ther server's memory
 func (s *Server) AllLogs() []serial.LogLine {
+	s.logLock.Lock()
+	defer s.logLock.Unlock()
 	return s.logs
 }
 
 // SetSettings sets the settings for all the underlying objects
 func (s *Server) SetSettings(cfg settings.Application) error {
 	// Update the settings inside this object
-	s.lock.Lock()
+	s.settingsLock.Lock()
 	s.config = cfg
-	s.lock.Unlock()
+	s.settingsLock.Unlock()
 
 	// Propogate it downwards to the bot
 	return s.tusk.UpdateSettings(cfg)
@@ -52,18 +56,36 @@ func (s *Server) GetGlobalSettings() settings.Application {
 // New creates a new instance of the Server
 func New(config settings.Application, db dbwrap.Wrapper) (*Server, error) {
 	rand.Seed(time.Now().UnixNano())
-	tusk, err := bot.New(config, db)
-	return &Server{
-		tusk:   tusk,
-		config: config,
-		logs:   []serial.LogLine{},
-		lock:   &sync.Mutex{},
-	}, err
+	tuskLogs := make(chan serial.LogLine, 16)
+	serv := &Server{
+		config:       config,
+		logs:         []serial.LogLine{},
+		settingsLock: &sync.Mutex{},
+		tuskLogs:     tuskLogs,
+		logLock:      &sync.Mutex{},
+	}
+	tusk, err := bot.New(config, db, tuskLogs)
+	serv.tusk = tusk
+
+	// Start listening for loglines on the tusk logline channel
+	go serv.listenForTuskLogs()
+	return serv, err
+}
+
+// listenForTuskLogs waits for the tusk object to send log lines, so that the server
+// can add them to its own logs
+func (s *Server) listenForTuskLogs() {
+	for {
+		logLine := <-s.tuskLogs
+		s.logLock.Lock()
+		s.logs = append(s.logs, logLine)
+		s.logLock.Unlock()
+	}
 }
 
 func (s *Server) setNextMessageTime() {
 	// Get the min-max minutes between messages
-	s.lock.Lock()
+	s.settingsLock.Lock()
 	now := time.Now()
 	min := s.config.Messaging.NormalMinMinutes
 	max := s.config.Messaging.NormalMaxMinutes
@@ -71,7 +93,7 @@ func (s *Server) setNextMessageTime() {
 		min = s.config.Messaging.SleepMinMinutes
 		max = s.config.Messaging.SleepMaxMinutes
 	}
-	s.lock.Unlock()
+	s.settingsLock.Unlock()
 
 	// And calculate the amount of minutes until the next one
 	distanceFromMin := max - min
@@ -90,7 +112,7 @@ func (s *Server) setNextMessageTime() {
 func (s *Server) Start() {
 	s.setNextMessageTime()
 	for {
-		if err := s.tusk.GetMessages(); err != nil {
+		if err := s.tusk.GetMessagesTelegram(); err != nil {
 			// Add it to the application errors for remote logging
 			s.LogError(err)
 		}
@@ -119,6 +141,8 @@ func (s *Server) SendOutMessages() error {
 // Log adds a message with the current UNIX timestamp to the application
 // in-memory logs
 func (s *Server) Log(message string) {
+	s.logLock.Lock()
+	defer s.logLock.Unlock()
 	s.logs = append(s.logs, serial.LogLine{
 		Message: message,
 		UNIX:    time.Now().Unix(),

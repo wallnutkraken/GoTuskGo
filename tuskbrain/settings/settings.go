@@ -24,9 +24,9 @@ var Default = Application{
 		AuthCode: "changeme",
 		Port:     5025,
 	},
-	Telegram: Telegram{
-		APIKey:  "",
-		Verbose: false,
+	APIs: APIs{
+		Telegram: "",
+		Discord:  "",
 	},
 	Database: Database{
 		Path: "opdata/gotuskgo.db",
@@ -43,7 +43,7 @@ var Default = Application{
 type Application struct {
 	Brain     Brain     `json:"brain"`
 	GRPC      GRPC      `json:"grpc"`
-	Telegram  Telegram  `json:"telegram"`
+	APIs      APIs      `json:"api_keys"`
 	Database  Database  `json:"database"`
 	Messaging Messaging `json:"messaging"`
 }
@@ -67,10 +67,10 @@ func (g GRPC) GetPort() string {
 	return fmt.Sprintf(":%d", g.Port)
 }
 
-// Telegram contains the settings for Telegram
-type Telegram struct {
-	APIKey  string `json:"api_key"`
-	Verbose bool   `json:"verbose"`
+// APIs contains the API Keys for all available services
+type APIs struct {
+	Telegram string `json:"telegram"`
+	Discord  string `json:"discord"`
 }
 
 // Database contains the settings for the SQLite database
@@ -103,6 +103,23 @@ func Load() (Application, error) {
 	sett := Application{}
 	if err := json.Unmarshal(settingsBytes, &sett); err != nil {
 		return Application{}, errors.Wrap(err, "json")
+	}
+
+	// Go through every section, if it's not set, give it default settings
+	if sett.Brain == (Brain{}) {
+		sett.Brain = Default.Brain
+	}
+	if sett.Database == (Database{}) {
+		sett.Database = Default.Database
+	}
+	if sett.GRPC == (GRPC{}) {
+		sett.GRPC = Default.GRPC
+	}
+	if sett.Messaging == (Messaging{}) {
+		sett.Messaging = Default.Messaging
+	}
+	if sett.APIs == (APIs{}) {
+		sett.APIs = Default.APIs
 	}
 
 	return sett, nil
