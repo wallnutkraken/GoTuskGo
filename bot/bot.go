@@ -2,6 +2,7 @@
 package bot
 
 import (
+	"github.com/wallnutkraken/gotuskgo/stringer"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
 	"github.com/go-telegram-bot-api/telegram-bot-api"
@@ -226,8 +227,14 @@ func (b *Bot) onDiscordMessage(discord *discordgo.Session, message *discordgo.Me
 	}
 	// Check if it starts with !, if so, it might be a command.
 	if strings.HasPrefix(message.Content, "!") {
+		// Split the message to find the command only
+		commandPieces := stringer.SplitMultiple(strings.ToLower(message.Content), " \n") // TODO: config
+		if len(commandPieces) == 0 {
+			// Weird, just return
+			return
+		}
 		// Find the command
-		cmd, exists := discordCmd[message.Content]
+		cmd, exists := discordCmd[commandPieces[0]]
 		if !exists {
 			// No command, just return. Better to just ignore messages starting with !, might be commands to other bots
 			return
