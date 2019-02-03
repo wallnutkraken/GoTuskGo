@@ -2,6 +2,8 @@
 package bot
 
 import (
+	"strconv"
+	"math/rand"
 	"github.com/wallnutkraken/gotuskgo/stringer"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
@@ -140,6 +142,25 @@ func (b *Bot) FillBrainFromDatabase() error {
 	return nil
 }
 
+// HandleInline processes and inline request
+func (b *Bot) HandleInline(update tgbotapi.Update) error {
+	// Create a response for saying a message
+	sayResponse := tgbotapi.InlineQueryResultArticle{
+		Type: "article",
+		ID: strconv.Itoa(rand.Int()),
+		Title: "Say something",
+		InputMessageContent: tgbotapi.InputTextMessageContent{
+			Text: b.brain.Generate(),
+		},
+	}
+	inline, err := b.telegram.AnswerInlineQuery(tgbotapi.InlineConfig{
+		InlineQueryID: update.InlineQuery.ID,
+		CacheTime: 0,
+		Results: []interface{}{sayResponse},
+	})
+	return err
+}
+
 // GetMessagesTelegram gets the latest messages from Telegram
 func (b *Bot) GetMessagesTelegram() error {
 	if b.telegram == nil {
@@ -163,10 +184,16 @@ func (b *Bot) GetMessagesTelegram() error {
 	// at the end, the offset will be of the last message
 	for _, update := range updates {
 		offset = update.UpdateID
+		if update.InlineQuery != nil {
+			if err := b.HandleInline(update); err != nil {
+				return errors.WithMessage(err, "HandleInline")
+			}
+		}
 		if update.Message == nil {
 			// Ignore non-messages
 			continue
 		}
+		
 		if strings.HasPrefix(update.Message.Text, "/") {
 			// This is a command, trim it and give it to the appropriate Commander
 			cmd := trimCommand(update.Message.Text)
