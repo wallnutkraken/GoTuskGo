@@ -153,7 +153,7 @@ func (b *Bot) HandleInline(update tgbotapi.Update) error {
 			Text: b.brain.Generate(),
 		},
 	}
-	inline, err := b.telegram.AnswerInlineQuery(tgbotapi.InlineConfig{
+	_, err := b.telegram.AnswerInlineQuery(tgbotapi.InlineConfig{
 		InlineQueryID: update.InlineQuery.ID,
 		CacheTime: 0,
 		Results: []interface{}{sayResponse},
