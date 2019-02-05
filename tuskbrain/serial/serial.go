@@ -4,6 +4,9 @@ package serial
 import (
 	"bytes"
 	"compress/gzip"
+	"io"
+	"io/ioutil"
+	"strings"
 	"time"
 
 	"github.com/pkg/errors"
@@ -45,6 +48,24 @@ func Marshal(messages []dbwrap.Message) ([]byte, error) {
 		return nil, errors.Wrap(err, "outputBuffer")
 	}
 	return output, nil
+}
+
+// Unmarshal deserializes a previously serialized database backup
+func Unmarshal(v []byte) ([]string, error) {
+	// Create a deserialization buffer
+	inputBuffer := bytes.NewBuffer(v)
+	reader, err := gzip.NewReader(inputBuffer)
+	if err != nil {
+		return nil, errors.Wrap(err, "gzip.NewReader")
+	}
+	defer reader.Close()
+	// Read all lines
+	allLines, err := ioutil.ReadAll(reader)
+	if err != nil && err != io.EOF {
+		return nil, errors.Wrap(err, "iotuil")
+	}
+	// Turn it into a string, split by newline
+	return strings.Split(string(allLines), "\n"), nil
 }
 
 // LogLine is a log entry, containing both the message (usually errors)

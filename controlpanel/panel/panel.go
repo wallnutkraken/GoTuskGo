@@ -131,8 +131,13 @@ func (p *Panel) AddToDatabase(ctx context.Context, messages *controlpanel.Messag
 		return nil, ErrBadAuthCode
 	}
 
-	err := p.srv.AddMessages(messages.Message)
-	return &controlpanel.Empty{}, err
+	// Start adding to messages in a separate goroutine, as this might take a while
+	go func() {
+		if err := p.srv.AddMessages(messages.Message); err != nil {
+			p.srv.LogError(err)
+		}
+	}()
+	return &controlpanel.Empty{}, nil 
 }
 
 // GetDatabase is the gRPC endpoint for getting a gzipped backup of the database messages (not chat IDs)
@@ -185,4 +190,26 @@ func (p *Panel) TriggerSendout(ctx context.Context, auth *controlpanel.AuthCode)
 	}
 
 	return &controlpanel.Empty{}, p.srv.SendOutMessages()
+}
+
+// RestoreFromDbExport restores a database's content from a saved gzip backup
+func (p *Panel) RestoreFromDbExport(ctx context.Context, data *controlpanel.RestoreDB) (*controlpanel.Empty, error) {
+	if data.Auth.Code != p.config.AuthCode {
+		return &controlpanel.Empty{}, ErrBadAuthCode
+	}
+
+	p.srv.Logf("Got [%d] bytes in DB restore", len(data.Content))
+	// Unmarshal the given data
+	lines, err := serial.Unmarshal(data.Content)
+	// Start a gofunc to fill the data in, as to not hold up the caller's time. Errors go into the in-memory log.
+	// Once it's started, just return the error to the user.
+	go p.AddLines(lines)
+	return &controlpanel.Empty{}, err
+}
+
+// AddLines adds the given lines to the database and GoTuskGo markov chain
+func (p *Panel) AddLines(lines []string) {
+	if err := p.srv.AddMessages(lines); err != nil {
+		p.srv.Logf("Error adding lines from backup: %s", err.Error())
+	}
 }

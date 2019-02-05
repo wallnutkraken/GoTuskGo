@@ -1,8 +1,10 @@
 package main
 
 import (
+	"os"
+	"fmt"
 	"github.com/jinzhu/gorm"
-	_ "github.com/jinzhu/gorm/dialects/sqlite"
+	_ "github.com/jinzhu/gorm/dialects/mysql"
 	"github.com/wallnutkraken/gotuskgo/bot"
 	"github.com/wallnutkraken/gotuskgo/controlpanel/panel"
 	"github.com/wallnutkraken/gotuskgo/server"
@@ -22,7 +24,7 @@ func main() {
 		}
 	}
 	// Connect to the database
-	db, err := gorm.Open("sqlite3", cfg.Database.Path)
+	db, err := gorm.Open("mysql", fmt.Sprintf("%s:%s@tcp(db:3306)/%s?charset=utf8mb4", os.Getenv("MYSQL_USER"), os.Getenv("MYSQL_PASSWORD"), os.Getenv("MYSQL_DATABASE")))
 	if err != nil {
 		panic("Failed connecting to the database " + err.Error())
 	}

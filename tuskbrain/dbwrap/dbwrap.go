@@ -27,7 +27,7 @@ func New(db *gorm.DB) Wrapper {
 
 // AutoMigrate runs the AutoMigrate GORM tool
 func (w Wrapper) AutoMigrate() error {
-	return w.db.AutoMigrate(&General{}, &Message{}, &Subscription{}, &SubscribeError{}).Error
+	return w.db.Set("gorm:table_options", "CHARSET=utf8mb4").AutoMigrate(&General{}, &Message{}, &Subscription{}, &SubscribeError{}).Error
 }
 
 // GetOffset gets the current offset

@@ -9,7 +9,7 @@ type General struct {
 // Message contains a stored message from Telegram, anonymized
 type Message struct {
 	ID      int    `gorm:"primary_key"`
-	Content string `gorm:"not null"`
+	Content string `gorm:"not null;size:999999"`
 }
 
 // Subscription contains a subscibed chat ID

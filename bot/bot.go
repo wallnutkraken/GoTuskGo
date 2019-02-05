@@ -283,9 +283,16 @@ func (b *Bot) onDiscordMessage(discord *discordgo.Session, message *discordgo.Me
 func (b *Bot) AddMessages(msgs []string) error {
 	// Add it to the database first, so if it fai.conls, there's no inconsistency between the database
 	// and the chain
-	for _, msg := range msgs {
+	total := len(msgs)
+	for index, msg := range msgs {
+		if index % 100 == 0 {
+			// Divisible by 100, log how many are added
+			b.logf("Added plaintext messages %d/%d", index, total)
+			// And also, take a short, 30ms break every 100 entries
+			time.Sleep(time.Microsecond*30)
+		}
 		if err := b.db.AddMessage(msg); err != nil {
-			return errors.WithMessage(err, "AddMessage to DB")
+			return errors.WithMessagef(err, "AddMessage to DB [%d]", index)
 		}
 	}
 	// And add it to the chain

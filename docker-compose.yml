@@ -1,12 +1,40 @@
 version: '2'
 volumes:
   settings: {}
+  maria: {}
+networks:
+  tusknet:
+    driver: "bridge"
 services:
+  db:
+    image: mariadb:latest
+    restart: on-failure
+    environment:
+      - MYSQL_ROOT_PASSWORD
+      - MYSQL_DATABASE
+      - MYSQL_USER
+      - MYSQL_PASSWORD
+    volumes:
+      - maria:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    networks:
+      - tusknet
   gotuskgo:
+    depends_on: 
+      - db
     restart: on-failure
     build: .
     ports:
       - "5025:5025"
     volumes: 
       - settings:/go/src/github.com/wallnutkraken/gotuskgo/opdata
+    environment:
+      - MYSQL_DATABASE
+      - MYSQL_USER
+      - MYSQL_PASSWORD
+    networks:
+      - tusknet
+    links:
+      - db
     

@@ -9,6 +9,7 @@ service Controller {
 	rpc GetDatabase(AuthCode) returns (stream SerializedData);
 	rpc AddToDatabase(MessageList) returns (Empty);
 	rpc TriggerSendout(AuthCode) returns (Empty);
+	rpc RestoreFromDbExport(RestoreDB) returns (Empty);
 }
 
 message AuthCode {
@@ -36,6 +37,11 @@ message SetConfigParams {
 message MessageList {
 	AuthCode Auth = 1;
 	repeated string Message = 2;
+}
+
+message RestoreDB {
+	AuthCode Auth = 1;
+	bytes Content = 2;
 }
 
 message Empty {

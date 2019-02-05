@@ -46,34 +46,39 @@ func (m *MethodList) Next() (Method, int, bool) {
 var methods = MethodList{
 	Methods: map[int]Method{
 		1: Method{
-			Name:        "GetLogs",
+			Name:        "Get Application Logs",
 			Function:    getErrors,
 			Description: "Get all logs from the in-memory GoTuskGo Logger",
 		},
 		2: Method{
-			Name:        "GetConfig",
+			Name:        "Get Config File",
 			Function:    getSettings,
 			Description: "Save the settings.json file for GoTuskGo to a local file",
 		},
 		3: Method{
-			Name:        "SetConfig",
+			Name:        "Set Config File",
 			Function:    setSettings,
 			Description: "Replace the remote GoTuskGo settings.json with a local file",
 		},
 		4: Method{
-			Name:        "AddToDatabase",
+			Name:        "Add Plaintext Messages To Database",
 			Function:    addMessages,
 			Description: "Adds a plaintext file to the GoTuskGo message list, separated by newlines",
 		},
 		5: Method{
-			Name:        "GetDatabase",
+			Name:        "Trigger Sendout",
+			Function:    triggerSendout,
+			Description: "Triggers a message sendout to all available channels",
+		},
+		6: Method{
+			Name:        "Get Database",
 			Function:    getDatabase,
 			Description: "Get a current database backup file",
 		},
-		6: Method{
-			Name:        "TriggerSendout",
-			Function:    triggerSendout,
-			Description: "Triggers a message sendout to all available channels",
+		7: Method{
+			Name: "Restore Database",
+			Function: setDatabase,
+			Description: "Restore database data from an existing backup. This will not overwrite any data.",
 		},
 	},
 }
@@ -290,4 +295,32 @@ func triggerSendout(client controlpanel.ControllerClient) {
 		errorExit(err)
 	}
 	fmt.Println("Done.")
+}
+
+func setDatabase(client controlpanel.ControllerClient) {
+	fmt.Println("Timeouts are disabled for this call.")
+	ctx := context.Background()
+	auth := &controlpanel.AuthCode{
+		Code: *authCode,
+	}
+	fmt.Print("Failepath of backup: ")
+	pathBytes, _, err := cliReader.ReadLine()
+	if err != nil {
+		errorExit(err)
+	}
+	// Read the file
+	content, err := ioutil.ReadFile(string(pathBytes))
+	if err != nil {
+		errorExit(err)
+	}
+	// Create the outgoing object
+	restoreCmd := &controlpanel.RestoreDB{
+		Auth: auth,
+		Content: content,
+	}
+
+	_, err = client.RestoreFromDbExport(ctx, restoreCmd)
+	if err != nil {
+		errorExit(err)
+	}
 }
