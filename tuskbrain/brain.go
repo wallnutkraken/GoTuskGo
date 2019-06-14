@@ -14,21 +14,27 @@ type Brain struct {
 }
 
 // New creates a new instance of the TUSK brain
-func New(brainSettings settings.Brain) Brain {
-	return Brain{
+func New(brainSettings settings.Brain) *Brain {
+	return &Brain{
 		chain:  gomarkov.NewChain(brainSettings.ChainLength),
 		config: brainSettings,
 	}
 }
 
 // Feed feeds the given messages to the bot markov chain
-func (b Brain) Feed(messages ...string) {
+func (b *Brain) Feed(messages ...string) {
 	for _, msg := range messages {
 		b.chain.Feed(stringer.SplitMultiple(msg, b.config.SplitChars))
 	}
 }
 
 // Generate creates a new string from the bot brain
-func (b Brain) Generate() string {
+func (b *Brain) Generate() string {
 	return b.chain.Generate(b.config.MaxGeneratedLength)
+}
+
+// UpdateSettings updates the markov chain's settings
+func (b *Brain) UpdateSettings(cfg settings.Brain) {
+	b.config = cfg
+	b.chain.SetLength(cfg.ChainLength)
 }

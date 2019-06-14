@@ -1,7 +1,6 @@
 package main
 
 import (
-	"os"
 	"fmt"
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/mysql"
@@ -10,6 +9,7 @@ import (
 	"github.com/wallnutkraken/gotuskgo/server"
 	"github.com/wallnutkraken/gotuskgo/tuskbrain/dbwrap"
 	"github.com/wallnutkraken/gotuskgo/tuskbrain/settings"
+	"os"
 )
 
 func main() {

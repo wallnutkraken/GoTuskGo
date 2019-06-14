@@ -19,6 +19,7 @@ var Default = Application{
 		SplitChars:         "-.,?!/\\\r \n\t",
 		MaxGeneratedLength: 30,
 		ChainLength:        1,
+		UseRNN:             false,
 	},
 	GRPC: GRPC{
 		AuthCode: "changeme",
@@ -37,6 +38,12 @@ var Default = Application{
 		SleepMinMinutes:  180,
 		SleepMaxMinutes:  200,
 	},
+	RNN: RNN{
+		SavePath:                "opdata/py-rnn.bin",
+		EpochsPerTraining:       30,
+		Temperature:             0.2,
+		MaxGenerationCharacters: 80,
+	},
 }
 
 // Application contains all the setting categories
@@ -46,6 +53,7 @@ type Application struct {
 	APIs      APIs      `json:"api_keys"`
 	Database  Database  `json:"database"`
 	Messaging Messaging `json:"messaging"`
+	RNN       RNN       `json:"rnn"`
 }
 
 // Brain contains the settings for the markov brain
@@ -53,6 +61,7 @@ type Brain struct {
 	SplitChars         string `json:"split_chars"`
 	MaxGeneratedLength int    `json:"max_generated_length"`
 	ChainLength        int    `json:"chain_length"`
+	UseRNN             bool   `json:"use_neuralnet"`
 }
 
 // GRPC contains the GRPC settings
@@ -84,6 +93,16 @@ type Messaging struct {
 	NormalMaxMinutes int `json:"normal_max"`
 	SleepMinMinutes  int `json:"sleep_min"`
 	SleepMaxMinutes  int `json:"sleep_max"`
+}
+
+// RNN contains the settings for the python RNN
+type RNN struct {
+	SavePath                string  `json:"save_path"`
+	EpochsPerTraining       int     `json:"epochs_per_training"`
+	Temperature             float64 `json:"temperature"`
+	MaxGenerationCharacters int     `json:"max_gen_chars"`
+	// TrainCooldownMins is the minute amount of time inbetween training
+	TrainMinsPeriod int `json:"training_mins_period"`
 }
 
 // Load loads all the settings from the filepath
@@ -120,6 +139,9 @@ func Load() (Application, error) {
 	}
 	if sett.APIs == (APIs{}) {
 		sett.APIs = Default.APIs
+	}
+	if sett.RNN == (RNN{}) {
+		sett.RNN = Default.RNN
 	}
 
 	return sett, nil

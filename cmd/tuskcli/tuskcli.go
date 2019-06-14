@@ -76,8 +76,8 @@ var methods = MethodList{
 			Description: "Get a current database backup file",
 		},
 		7: Method{
-			Name: "Restore Database",
-			Function: setDatabase,
+			Name:        "Restore Database",
+			Function:    setDatabase,
 			Description: "Restore database data from an existing backup. This will not overwrite any data.",
 		},
 	},
@@ -315,7 +315,7 @@ func setDatabase(client controlpanel.ControllerClient) {
 	}
 	// Create the outgoing object
 	restoreCmd := &controlpanel.RestoreDB{
-		Auth: auth,
+		Auth:    auth,
 		Content: content,
 	}
 

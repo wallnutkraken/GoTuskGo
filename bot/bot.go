@@ -2,31 +2,32 @@
 package bot
 
 import (
-	"strconv"
 	"math/rand"
-	"github.com/wallnutkraken/gotuskgo/stringer"
-	"fmt"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/bwmarrin/discordgo"
 	"github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/pkg/errors"
+	"github.com/wallnutkraken/gotuskgo/memlog"
+	"github.com/wallnutkraken/gotuskgo/stringer"
 	"github.com/wallnutkraken/gotuskgo/tuskbrain"
 	"github.com/wallnutkraken/gotuskgo/tuskbrain/dbwrap"
-	"github.com/wallnutkraken/gotuskgo/tuskbrain/serial"
+	"github.com/wallnutkraken/gotuskgo/tuskbrain/rnn"
 	"github.com/wallnutkraken/gotuskgo/tuskbrain/settings"
-	"strings"
-	"sync"
-	"time"
 )
 
 // Bot is the object containing everything to operate the GoTuskGo bot
 type Bot struct {
-	appSettings settings.Application
-	brain       tuskbrain.Brain
-	telegram    *tgbotapi.BotAPI
-	discord     *discordgo.Session
-	db          Database
-	lock        *sync.Mutex
-	logLine     chan serial.LogLine
+	appSettings        settings.Application
+	brain              *tuskbrain.Brain
+	telegram           *tgbotapi.BotAPI
+	discord            *discordgo.Session
+	db                 Database
+	logLine            *memlog.Child
+	neuralnet          *rnn.Network
+	cancelNextTraining chan interface{}
 }
 
 var (
@@ -42,23 +43,23 @@ type Database interface {
 	GetOffset() int
 	SetOffset(value int) error
 	AddMessage(msg string) error
-	GetSubscription(chatID int64) (dbwrap.Subscription, error)
-	AddSubscription(chatID int64) error
-	Unsubscribe(sub dbwrap.Subscription) error
-	GetSubscriptions() ([]dbwrap.Subscription, error)
-	AddSubscribeError(chatID int64, message string) error
 	GetAllMessages() ([]dbwrap.Message, error)
 }
 
 // New creates a new instance of the bot
-func New(config settings.Application, db Database, logLine chan serial.LogLine) (*Bot, error) {
+func New(config settings.Application, db Database, logLine *memlog.Child) (*Bot, error) {
 	tusk := &Bot{
-		appSettings: config,
-		brain:       tuskbrain.New(config.Brain),
-		db:          db,
-		lock:        &sync.Mutex{},
-		logLine:     logLine,
+		appSettings:        config,
+		brain:              tuskbrain.New(config.Brain),
+		db:                 db,
+		logLine:            logLine,
+		neuralnet:          rnn.New(config.RNN, logLine),
+		cancelNextTraining: make(chan interface{}, 8),
 	}
+	if config.Brain.UseRNN {
+		go tusk.NeuralNetworkSevice()
+	}
+
 	// Connect to Telegram
 	tg, err := tgbotapi.NewBotAPI(config.APIs.Telegram)
 	if err != nil {
@@ -70,10 +71,7 @@ func New(config settings.Application, db Database, logLine chan serial.LogLine) 
 	if err := tusk.InitDiscord(config.APIs.Discord); err != nil {
 		// Return ErrServiceInit above to let the application run
 		// without this service, but log the actual error
-		logLine <- serial.LogLine{
-			Message: err.Error(),
-			UNIX:    time.Now().Unix(),
-		}
+		tusk.logLine.ErrorMessage(err, "Failed to initialize Discord")
 		return tusk, ErrServiceInit
 	}
 
@@ -84,49 +82,108 @@ func New(config settings.Application, db Database, logLine chan serial.LogLine) 
 	return tusk, nil
 }
 
-func (b *Bot) log(message string) {
-	b.logLine <- serial.LogLine{
-		Message: message,
-		UNIX:    time.Now().Unix(),
+// NeuralNetworkSevice runs a service, which trains the neural network
+// every n minutes.
+//
+// n is defined in settings.RNN.TrainMinsPeriod
+func (b *Bot) NeuralNetworkSevice() {
+	for {
+		// Create a time.After channel for the next training
+		// Listen to that and cancelNextTraining
+		select {
+		case <-time.After(time.Duration(b.appSettings.RNN.TrainMinsPeriod) * time.Minute):
+			b.trainNetwork()
+		case <-b.cancelNextTraining:
+			return
+		}
 	}
 }
 
-func (b *Bot) logf(message string, args ...interface{}) {
-	b.log(fmt.Sprintf(message, args...))
+// trainNetwork trains the RNN with the current database data
+func (b *Bot) trainNetwork() {
+	msgs, err := b.db.GetAllMessages()
+	if err != nil {
+		b.logLine.ErrorMessage(err, "ailed getting messages from the database")
+	}
+	// msgs -> string
+	msgStr := make([]string, len(msgs))
+	for index, msg := range msgs {
+		msgStr[index] = msg.Content
+	}
+
+	b.logLine.Logf("Starting training with %d lines", len(msgStr))
+	start := time.Now()
+	if err := b.neuralnet.Train(msgStr); err != nil {
+		b.logLine.ErrorMessage(err, "Failed training the RNN")
+		return
+	}
+	b.logLine.Logf("Finished training in %s", time.Since(start).String())
 }
 
 // UpdateSettings changes the settings for the bot and re-initializes the Telegram client,
 // As well as the markov length (if different)
 func (b *Bot) UpdateSettings(config settings.Application) error {
 	var err error
-	b.lock.Lock()
-	defer b.lock.Unlock()
 	if config.APIs.Telegram != b.appSettings.APIs.Telegram {
 		// Telegram re-init is needed, re-init with new key
 		b.telegram, err = tgbotapi.NewBotAPI(config.APIs.Telegram)
 		if err != nil {
-			b.logf("Error while re-initializing Telegram after settings update: %s", err.Error())
+			b.logLine.ErrorMessage(err, "Error while re-initializing Telegram after settings update")
 		}
 	}
 	// Also, for discord
 	if config.APIs.Discord != b.appSettings.APIs.Discord {
 		// Discord re-init is needed, re-init with new key
 		if err := b.InitDiscord(config.APIs.Discord); err != nil {
-			b.logf("Error while re-initializing Discord after settings update: %s", err.Error())
+			b.logLine.ErrorMessage(err, "Error while re-initializing Discord after settings update")
 		}
 	}
 	// Check if the markov chain length changed
-	if config.Brain.ChainLength != b.appSettings.Brain.ChainLength {
-		// Re-init the brain with the new length
-		b.brain = tuskbrain.New(config.Brain)
-		if err := b.FillBrainFromDatabase(); err != nil {
-			return err
+	b.brain.UpdateSettings(config.Brain)
+	// Set the settings for the RNN
+	b.neuralnet.UpdateSettings(config.RNN)
+
+	// Check if use_neuralnet is different
+	if b.appSettings.Brain.UseRNN != config.Brain.UseRNN {
+		// Change in settings, start or stop the service depending on what the new setting is
+		if config.Brain.UseRNN {
+			// It wasn't running, start it
+			go b.NeuralNetworkSevice()
+		} else {
+			// It's running, stop it.
+			// NOTE: this will not stop any training currently in progress, it will only
+			// stop it from training after this point
+			b.cancelNextTraining <- true
 		}
 	}
 
 	// Finally, just replace the settings object
 	b.appSettings = config
 	return nil
+}
+
+// GenerateN generates count of messages. Preferring the RNN if possible.
+// If the RNN returns an error, it is logged, and the default markov
+// backend is used for the remainder of the messages
+func (b *Bot) GenerateN(count int) []string {
+	// First, generate neuralnet responses
+	messages, err := b.neuralnet.GenerateN(count)
+	if err == nil {
+		// No error, just return messages
+		return messages
+	}
+	// An error has occurred, log it, then default to generateMarkovN
+	b.logLine.ErrorMessage(err, "Failed generating messages via neural network")
+	return b.generateMarkovN(count)
+}
+
+// generateMarkovN generates count amount of messages via the markov backend
+func (b *Bot) generateMarkovN(count int) []string {
+	messages := make([]string, count)
+	for index := range messages {
+		messages[index] = b.brain.Generate()
+	}
+	return messages
 }
 
 // FillBrainFromDatabase fills the markov brain from the messages stored in the database
@@ -144,19 +201,25 @@ func (b *Bot) FillBrainFromDatabase() error {
 
 // HandleInline processes and inline request
 func (b *Bot) HandleInline(update tgbotapi.Update) error {
-	// Create a response for saying a message
-	sayResponse := tgbotapi.InlineQueryResultArticle{
-		Type: "article",
-		ID: strconv.Itoa(rand.Int()),
-		Title: "Say something",
-		InputMessageContent: tgbotapi.InputTextMessageContent{
-			Text: b.brain.Generate(),
-		},
+	// First, get the messages to send
+	messageList := b.GenerateN(5) // TODO: make this 5 a selectable option
+	// Create a 5 possible choices
+	responses := make([]interface{}, 5)
+	for index, msg := range messageList {
+		responses[index] = tgbotapi.InlineQueryResultArticle{
+			Type:  "article",
+			ID:    strconv.Itoa(rand.Int()),
+			Title: msg,
+			InputMessageContent: tgbotapi.InputTextMessageContent{
+				Text: msg,
+			},
+		}
 	}
+
 	_, err := b.telegram.AnswerInlineQuery(tgbotapi.InlineConfig{
 		InlineQueryID: update.InlineQuery.ID,
-		CacheTime: 0,
-		Results: []interface{}{sayResponse},
+		CacheTime:     0,
+		Results:       responses,
 	})
 	return err
 }
@@ -167,8 +230,6 @@ func (b *Bot) GetMessagesTelegram() error {
 		return ErrServiceInit
 	}
 	// Lock this while it runs, as this interacts with the markov chain
-	b.lock.Lock()
-	defer b.lock.Unlock()
 	// Get the current offset
 	offset := b.db.GetOffset()
 
@@ -193,7 +254,7 @@ func (b *Bot) GetMessagesTelegram() error {
 			// Ignore non-messages
 			continue
 		}
-		
+
 		if strings.HasPrefix(update.Message.Text, "/") {
 			// This is a command, trim it and give it to the appropriate Commander
 			cmd := trimCommand(update.Message.Text)
@@ -267,14 +328,14 @@ func (b *Bot) onDiscordMessage(discord *discordgo.Session, message *discordgo.Me
 			return
 		}
 		if err := cmd(message, b); err != nil {
-			b.logf("Discord Error handling command [%s]: %s", message.Content, err.Error())
+			b.logLine.ErrorMessagef(err, "Discord Error handling command [%s]", message.Content)
 		}
 		// Return upon finishing handling commands, do not let a command message be saved
 		return
 	}
 	// Just a regular message, add it to the bot
 	if err := b.db.AddMessage(message.Content); err != nil {
-		b.logf("Error saving discord message [%s] to database: %s", message.Content, err.Error())
+		b.logLine.ErrorMessagef(err, "Error saving discord message [%s] to database", message.Content)
 	}
 	b.brain.Feed(message.Content)
 }
@@ -285,20 +346,23 @@ func (b *Bot) AddMessages(msgs []string) error {
 	// and the chain
 	total := len(msgs)
 	for index, msg := range msgs {
-		if index % 100 == 0 {
+		if index%100 == 0 {
 			// Divisible by 100, log how many are added
-			b.logf("Added plaintext messages %d/%d", index, total)
+			b.logLine.Logf("Added plaintext messages %d/%d", index, total)
 			// And also, take a short, 30ms break every 100 entries
-			time.Sleep(time.Microsecond*30)
+			time.Sleep(time.Microsecond * 30)
+		}
+		// Ignore empty messages
+		if msg == "" {
+			continue
 		}
 		if err := b.db.AddMessage(msg); err != nil {
 			return errors.WithMessagef(err, "AddMessage to DB [%d]", index)
 		}
 	}
+	b.logLine.Logf("Added plaintext messages %d/%d", total, total)
 	// And add it to the chain
-	b.lock.Lock()
 	b.brain.Feed(msgs...)
-	b.lock.Unlock()
 	return nil
 }
 
@@ -307,26 +371,4 @@ func (b *Bot) sendMessage(chatID int64, message string) error {
 	msg := tgbotapi.NewMessage(chatID, message)
 	_, err := b.telegram.Send(msg)
 	return err
-}
-
-// SendTUSK sends out a TUSK message to all subscribed channels on Telegram.
-// It will only reply to discord messages, and never initiate a message.
-func (b *Bot) SendTUSK() error {
-	// Lock this while it runs, as this interacts with the markov chain
-	b.lock.Lock()
-	defer b.lock.Unlock()
-	subscriptions, err := b.db.GetSubscriptions()
-	if err != nil {
-		return errors.WithMessage(err, "GetSubscriptions")
-	}
-	// Generate a message
-	message := b.brain.Generate()
-	for _, sub := range subscriptions {
-		err := b.sendMessage(sub.ChatID, message)
-		if err != nil {
-			// An error occurred, unsubscribe the chat. Ignore errors.
-			b.db.AddSubscribeError(sub.ChatID, err.Error())
-		}
-	}
-	return nil
 }

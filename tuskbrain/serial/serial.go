@@ -31,8 +31,6 @@ func Marshal(messages []dbwrap.Message) ([]byte, error) {
 	// Create the file header
 	var outputBuffer bytes.Buffer
 	zw := gzip.NewWriter(&outputBuffer)
-	defer zw.Close()
-	zw.Name = "GoTuskGoDatabaseDump.txt"
 	zw.ModTime = time.Now().UTC()
 
 	// Write the content
@@ -40,6 +38,7 @@ func Marshal(messages []dbwrap.Message) ([]byte, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "gzip")
 	}
+	zw.Close()
 
 	// And read the written buffer
 	output := make([]byte, outputBuffer.Len())
@@ -66,11 +65,4 @@ func Unmarshal(v []byte) ([]string, error) {
 	}
 	// Turn it into a string, split by newline
 	return strings.Split(string(allLines), "\n"), nil
-}
-
-// LogLine is a log entry, containing both the message (usually errors)
-// as well as the Unix time stamp
-type LogLine struct {
-	Message string
-	UNIX    int64
 }

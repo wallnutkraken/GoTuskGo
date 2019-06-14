@@ -76,6 +76,11 @@ func NewChain(linksLength int) *Chain {
 	return &Chain{make(map[string]map[string]int), linksLength}
 }
 
+// SetLength sets the chain length
+func (c *Chain) SetLength(length int) {
+	c.linksLength = length
+}
+
 // Build reads text from the provided Reader and
 // parses it into prefixes and suffixes that are stored in Chain.
 func (c *Chain) Build(r io.Reader) {

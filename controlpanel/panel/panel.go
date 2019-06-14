@@ -4,15 +4,16 @@ package panel
 import (
 	"context"
 	"encoding/json"
-	"github.com/pkg/errors"
-	"github.com/wallnutkraken/gotuskgo/controlpanel"
-	"github.com/wallnutkraken/gotuskgo/tuskbrain/serial"
-	"google.golang.org/grpc"
 	"net"
 
+	"github.com/pkg/errors"
+	"github.com/wallnutkraken/gotuskgo/controlpanel"
+	"github.com/wallnutkraken/gotuskgo/memlog"
 	"github.com/wallnutkraken/gotuskgo/server"
 	"github.com/wallnutkraken/gotuskgo/tuskbrain/dbwrap"
+	"github.com/wallnutkraken/gotuskgo/tuskbrain/serial"
 	"github.com/wallnutkraken/gotuskgo/tuskbrain/settings"
+	"google.golang.org/grpc"
 )
 
 var (
@@ -31,6 +32,7 @@ type Panel struct {
 	config settings.GRPC
 	srv    *server.Server
 	db     Database
+	log    *memlog.Child
 }
 
 // New creates a new instance of the Control Panel gRPC API
@@ -39,6 +41,7 @@ func New(cfg settings.GRPC, srv *server.Server, db Database) *Panel {
 		config: cfg,
 		srv:    srv,
 		db:     db,
+		log:    srv.LogChild("panel"),
 	}
 }
 
@@ -134,10 +137,10 @@ func (p *Panel) AddToDatabase(ctx context.Context, messages *controlpanel.Messag
 	// Start adding to messages in a separate goroutine, as this might take a while
 	go func() {
 		if err := p.srv.AddMessages(messages.Message); err != nil {
-			p.srv.LogError(err)
+			p.log.ErrorMessage(err, "AddMessages")
 		}
 	}()
-	return &controlpanel.Empty{}, nil 
+	return &controlpanel.Empty{}, nil
 }
 
 // GetDatabase is the gRPC endpoint for getting a gzipped backup of the database messages (not chat IDs)
@@ -185,11 +188,7 @@ func (p *Panel) GetDatabase(auth *controlpanel.AuthCode, respStream controlpanel
 
 // TriggerSendout triggers a GoTuskGo sendout to all available channels
 func (p *Panel) TriggerSendout(ctx context.Context, auth *controlpanel.AuthCode) (*controlpanel.Empty, error) {
-	if auth.Code != p.config.AuthCode {
-		return &controlpanel.Empty{}, ErrBadAuthCode
-	}
-
-	return &controlpanel.Empty{}, p.srv.SendOutMessages()
+	return &controlpanel.Empty{}, errors.New("Deprecated")
 }
 
 // RestoreFromDbExport restores a database's content from a saved gzip backup
@@ -198,7 +197,7 @@ func (p *Panel) RestoreFromDbExport(ctx context.Context, data *controlpanel.Rest
 		return &controlpanel.Empty{}, ErrBadAuthCode
 	}
 
-	p.srv.Logf("Got [%d] bytes in DB restore", len(data.Content))
+	p.log.Logf("Got [%d] bytes in DB restore", len(data.Content))
 	// Unmarshal the given data
 	lines, err := serial.Unmarshal(data.Content)
 	// Start a gofunc to fill the data in, as to not hold up the caller's time. Errors go into the in-memory log.
@@ -210,6 +209,6 @@ func (p *Panel) RestoreFromDbExport(ctx context.Context, data *controlpanel.Rest
 // AddLines adds the given lines to the database and GoTuskGo markov chain
 func (p *Panel) AddLines(lines []string) {
 	if err := p.srv.AddMessages(lines); err != nil {
-		p.srv.Logf("Error adding lines from backup: %s", err.Error())
+		p.log.ErrorMessage(err, "Error adding lines from backup")
 	}
 }
